@@ -1,0 +1,73 @@
+# CodeDelta for GitLab CI — churn + Agent Scan on every merge request.
+#
+# Quick start: copy this job into your .gitlab-ci.yml (or `include:` this file).
+# No licence needed during the free-trial period — the bundled trial licence is
+# used (valid to 2026-08-31). To use your own: set a masked CI/CD variable
+# CODEDELTA_LICENSE to the base64 of your codedelta.lic.
+#
+# MR comment (optional): set CODEDELTA_GITLAB_TOKEN to a Project Access Token
+# (role Reporter+, scope `api`) and the job posts/updates a summary note on the MR.
+# Without it you still get the full HTML/CSV/JSON reports as job artifacts.
+#
+# Docs: https://codedelta.app/cli.html   Engine: gated by licence, download is public.
+
+codedelta:
+  image: ubuntu:24.04
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"                # full history so base..head churn works
+    CD_MODE: "churn_agent"        # churn + Agent Scan (add the ML audit with "both")
+    CD_THRESHOLD: "50"
+  script:
+    - apt-get update -qq && apt-get install -y -qq curl git ca-certificates > /dev/null
+    - curl -fsSL -o /tmp/cd.tar.gz "${CODEDELTA_ENGINE_URL:-https://github.com/code-delta-app/releases/releases/latest/download/codedelta-linux-full.tar.gz}"
+    - mkdir -p /opt/codedelta && tar -xzf /tmp/cd.tar.gz -C /opt/codedelta --strip-components=1
+    - |
+      if [ -n "$CODEDELTA_LICENSE" ]; then
+        echo "$CODEDELTA_LICENSE" | base64 -d > /tmp/codedelta.lic
+      else
+        echo "No licence supplied - using the CodeDelta free trial licence (valid to 2026-08-31)."
+        echo "ewogICJ0eXBlIjogInRpbWVkIiwKICAiY3VzdG9tZXIiOiAiQ29kZURlbHRhIHB1YmxpYyBiZXRhIiwKICAiaXNzdWVkIjogIjIwMjYtMDctMTQiLAogICJleHBpcnkiOiAiMjAyNi0wOC0zMSIsCiAgImhvc3QiOiBudWxsLAogICJzZWF0cyI6ICJ1bmxpbWl0ZWQiLAogICJjb2RlZGVsdGFfdmVyc2lvbiI6ICIxLjguNiIsCiAgInNpZ25hdHVyZSI6ICJLRGJDWWxhbndzUEhCN0g0cTRFL3p5WXdkWlZldnpuaGtnZjdpWHQwOHNQcG9MU2NVTTdreTZ1QVJhZlErdzF5MVZyOUlvOVdGM0g2ZnhEejJxNmd3dkRmcTQ1YS9URUZOM1JIblpqYnJQTXUzRGQzZS85WnNVREZjZUoxbU1zckNXbzJUQktuYWVIUTZ3NGR0U1hneTZiQTk1czRqS0ZVd1BoWW9TaE15SG1iNXR1b1VzK2JHRHl0cm5QQmxQU3lwSkFvNmtBcVlJUVVOQXY2S0VHWER6VjdLSGw1Y0tLQzlLclYwSGlxVmdqL1lyd3FxTWx2ODBGdWJ2eU5xTHBheUJybzl5SHdvSkpZenoybUNrcm4rR05NMEQxUHVKbG1jYWF5L3IzSzNRK1VkQ1hCc3pPNlp1Q0tYRXl6SW5tRmxEU2c4aG5iMUlHKzJIdkROQktyT1c3TkxPWDhmOUpKZHlqb2lYUVc1d1RYdSswQU5EQTUxWWUxeDQwVXlCMnFrQWlRVllRZjZzaXJSVWtjU2lBWitZUzA1WHkyeVArL2xHSTA5Z0hTR1FPNEFvbEJOaFBZVjVWSGlYQjdZQzI0bmJXa0xWOFlhS0FyTEZEelpmQjByVG1ZR3JnWSs3U1NnWndXU29GUWxOL2NxV2dEejBXd0VQWGs5bHNsdVBOZyIKfQ==" | base64 -d > /tmp/codedelta.lic
+      fi
+      export CODEDELTA_LICENSE=/tmp/codedelta.lic
+    - |
+      # Churn needs two versions: materialise the MR diff base as a second tree.
+      TARGETS="."
+      if [ -n "$CI_MERGE_REQUEST_DIFF_BASE_SHA" ]; then
+        git fetch --no-tags origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA" || true
+        if git worktree add /tmp/cd-base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"; then
+          TARGETS=". /tmp/cd-base"
+        fi
+      fi
+      # codedelta-gui is the frozen CLI binary - run it directly (paths must not contain spaces)
+      /opt/codedelta/codedelta-gui scan $TARGETS --mode "$CD_MODE" --threshold "$CD_THRESHOLD" \
+        --out-dir cd-out --html --json --csv --pr-comment || CD_RC=$?
+      # exit 3 = findings gate (only meaningful with --fail-on-new); anything else non-zero is a real error
+      if [ "${CD_RC:-0}" != "0" ] && [ "${CD_RC:-0}" != "3" ]; then exit "${CD_RC}"; fi
+    - |
+      # Post/update the MR summary note (needs CODEDELTA_GITLAB_TOKEN, scope api)
+      if [ -n "$CODEDELTA_GITLAB_TOKEN" ] && [ -n "$CI_MERGE_REQUEST_IID" ]; then
+        MD=$(ls cd-out/*_pr_comment.md 2>/dev/null | head -1)
+        if [ -n "$MD" ]; then
+          MARKER="<!-- codedelta -->"
+          BODY=$(printf '%s\n%s' "$MARKER" "$(cat "$MD")")
+          API="$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+          EXISTING=$(curl -fsS --header "PRIVATE-TOKEN: $CODEDELTA_GITLAB_TOKEN" "$API?per_page=100" \
+            | grep -o '"id":[0-9]*,"type":[^}]*codedelta[^}]*' | head -1 | grep -o '"id":[0-9]*' | cut -d: -f2 || true)
+          if [ -n "$EXISTING" ]; then
+            curl -fsS --request PUT --header "PRIVATE-TOKEN: $CODEDELTA_GITLAB_TOKEN" \
+              "$API/$EXISTING" --data-urlencode "body=$BODY" > /dev/null && echo "MR note updated"
+          else
+            curl -fsS --request POST --header "PRIVATE-TOKEN: $CODEDELTA_GITLAB_TOKEN" \
+              "$API" --data-urlencode "body=$BODY" > /dev/null && echo "MR note posted"
+          fi
+        fi
+      else
+        echo "CODEDELTA_GITLAB_TOKEN not set - skipping MR note (reports are in the job artifacts)"
+      fi
+  artifacts:
+    when: always
+    paths:
+      - cd-out/
+    expire_in: 30 days
