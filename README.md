@@ -22,3 +22,10 @@ base-worktree steps exercised locally against the v1.8.9 release; the engine
 invocation is identical to the GitHub Action's, which is live-tested end-to-end.
 The MR-note API step is untested against a real GitLab instance — first run on
 one should watch that step.
+
+---
+
+CodeDelta is a deterministic code-churn measurement and AI-agent detection
+engine — docs, technical papers and downloads at
+[www.codedelta.app](https://www.codedelta.app) (CLI/CI guide:
+[codedelta.app/cli.html](https://www.codedelta.app/cli.html)).
