@@ -11,17 +11,13 @@ licence variable is needed.
 
 Variables (all optional):
 - `CODEDELTA_LICENSE` — base64 of your codedelta.lic (masked CI/CD variable).
-  Omit to use the bundled trial licence (valid to 2026-08-31).
+  Omit to use the built-in evaluation licence (valid to 2026-10-31).
 - `CODEDELTA_GITLAB_TOKEN` — Project Access Token (Reporter+, scope `api`)
   to enable the MR note. Without it, reports are in the job artifacts.
 - `CODEDELTA_ENGINE_URL` — pin an engine version or point at a self-hosted copy.
 - `CD_MODE` (`churn_agent` default), `CD_THRESHOLD` (50).
 
-Validated 26 Jul 2026: YAML parsed; bundle URL, extraction, licence fallback and
-base-worktree steps exercised locally against the v1.8.9 release; the engine
-invocation is identical to the GitHub Action's, which is live-tested end-to-end.
-The MR-note API step is untested against a real GitLab instance — first run on
-one should watch that step.
+Validated 8 September 2026 against the v2.0.2 release: YAML parsed; the bundle URL resolves to v2.0.2 and extracts to the layout the job expects; the built-in evaluation licence verifies (valid to 31 October 2026); the base-worktree scan step run with the v2.0.2 CLI produced all artifacts and the MR comment. Not run inside the Ubuntu image itself; the MR-note API step is untested against a real GitLab instance.
 
 ---
 
