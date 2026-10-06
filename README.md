@@ -11,7 +11,7 @@ licence variable is needed.
 
 Variables (all optional):
 - `CODEDELTA_LICENSE` — base64 of your codedelta.lic (masked CI/CD variable).
-  Omit to use the built-in evaluation licence (valid to 2026-10-31).
+  Omit to use the built-in evaluation licence (valid to 2026-12-31).
 - `CODEDELTA_GITLAB_TOKEN` — Project Access Token (Reporter+, scope `api`)
   to enable the MR note. Without it, reports are in the job artifacts.
 - `CODEDELTA_ENGINE_URL` — pin an engine version or point at a self-hosted copy.
