@@ -6,8 +6,8 @@ downloads the public engine bundle, runs churn + Agent Scan on the MR
 posts/updates a summary note on the MR.
 
 Quick start: copy the job into your `.gitlab-ci.yml` (or `include:` this file
-by URL). That's it — during the free-trial period (to 31 August 2026) no
-licence variable is needed.
+by URL). That's it — until 31 December 2026 the built-in evaluation licence
+is used, so no licence variable is needed.
 
 Variables (all optional):
 - `CODEDELTA_LICENSE` — base64 of your codedelta.lic (masked CI/CD variable).
@@ -17,7 +17,7 @@ Variables (all optional):
 - `CODEDELTA_ENGINE_URL` — pin an engine version or point at a self-hosted copy.
 - `CD_MODE` (`churn_agent` default), `CD_THRESHOLD` (50).
 
-Validated 8 September 2026 against the v2.0.2 release: YAML parsed; the bundle URL resolves to v2.0.2 and extracts to the layout the job expects; the built-in evaluation licence verifies (valid to 31 October 2026); the base-worktree scan step run with the v2.0.2 CLI produced all artifacts and the MR comment. Not run inside the Ubuntu image itself; the MR-note API step is untested against a real GitLab instance.
+Validated 7 October 2026 on GitLab.com with a pre-release build of v2.3.0: the job ran in a real merge-request pipeline and produced the reports, with CodeDelta's own output kept out of the scan. The MR-note API step is untested against a real GitLab instance (it needs a Project Access Token).
 
 ---
 
