@@ -20,7 +20,7 @@ codedelta:
     CD_MODE: "churn_agent"        # churn + Agent Scan (add the ML audit with "both")
     CD_THRESHOLD: "50"
   script:
-    - apt-get update -qq && apt-get install -y -qq curl git ca-certificates > /dev/null
+    - apt-get update -qq && apt-get install -y -qq curl git ca-certificates jq > /dev/null
     - curl -fsSL -o /tmp/cd.tar.gz "${CODEDELTA_ENGINE_URL:-https://github.com/code-delta-app/releases/releases/latest/download/codedelta-linux-full.tar.gz}"
     - mkdir -p /opt/codedelta && tar -xzf /tmp/cd.tar.gz -C /opt/codedelta --strip-components=1
     - |
@@ -50,20 +50,30 @@ codedelta:
       if [ "${CD_RC:-0}" != "0" ] && [ "${CD_RC:-0}" != "3" ]; then exit "${CD_RC}"; fi
     - |
       # Post/update the MR summary note (needs CODEDELTA_GITLAB_TOKEN, scope api)
-      if [ -n "$CODEDELTA_GITLAB_TOKEN" ] && [ -n "$CI_MERGE_REQUEST_IID" ]; then
+      # A token copied from a web page often carries a trailing line break; curl then rejects the header (17 Oct 2026).
+      TOKEN=$(printf '%s' "${CODEDELTA_GITLAB_TOKEN:-}" | tr -d '[:space:]')
+      if [ -n "$TOKEN" ] && [ -n "$CI_MERGE_REQUEST_IID" ]; then
         MD=$(ls cd-out/*_pr_comment.md 2>/dev/null | head -1)
         if [ -n "$MD" ]; then
           MARKER="<!-- codedelta -->"
           BODY=$(printf '%s\n%s' "$MARKER" "$(cat "$MD")")
           API="$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
-          EXISTING=$(curl -fsS --header "PRIVATE-TOKEN: $CODEDELTA_GITLAB_TOKEN" "$API?per_page=100" \
-            | grep -o '"id":[0-9]*,"type":[^}]*codedelta[^}]*' | head -1 | grep -o '"id":[0-9]*' | cut -d: -f2 || true)
+          # Only OUR earlier note: it starts with the marker AND was written by this token's account. A text search matched
+          # other people's notes that mention "codedelta" (GitLab Duo's) and built a broken URL (17 Oct 2026).
+          ME=$(curl -fsS --header "PRIVATE-TOKEN: $TOKEN" "$CI_API_V4_URL/user" 2>/dev/null | jq -r '.id // empty' 2>/dev/null || true)
+          EXISTING=""
+          if [ -n "$ME" ]; then
+            EXISTING=$( (curl -fsS --header "PRIVATE-TOKEN: $TOKEN" "$API?per_page=100&sort=asc" || true) \
+              | jq -r --arg m "$MARKER" --argjson me "$ME" '[.[] | select(.author.id == $me and (.body | startswith($m)))] | .[0].id // empty' 2>/dev/null || true)
+          fi
           if [ -n "$EXISTING" ]; then
-            curl -fsS --request PUT --header "PRIVATE-TOKEN: $CODEDELTA_GITLAB_TOKEN" \
-              "$API/$EXISTING" --data-urlencode "body=$BODY" > /dev/null && echo "MR note updated"
+            curl -fsS --request PUT --header "PRIVATE-TOKEN: $TOKEN" \
+              "$API/$EXISTING" --data-urlencode "body=$BODY" > /dev/null && echo "MR note updated" \
+              || echo "WARNING: could not update the MR note (check the token's api scope) - reports are in the job artifacts"
           else
-            curl -fsS --request POST --header "PRIVATE-TOKEN: $CODEDELTA_GITLAB_TOKEN" \
-              "$API" --data-urlencode "body=$BODY" > /dev/null && echo "MR note posted"
+            curl -fsS --request POST --header "PRIVATE-TOKEN: $TOKEN" \
+              "$API" --data-urlencode "body=$BODY" > /dev/null && echo "MR note posted" \
+              || echo "WARNING: could not post the MR note (check the token's api scope) - reports are in the job artifacts"
           fi
         fi
       else
