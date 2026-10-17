@@ -41,8 +41,11 @@ codedelta:
         fi
       fi
       # codedelta-gui is the frozen CLI binary - run it directly (paths must not contain spaces)
+      # Reports go OUTSIDE the project, then are copied back for the artifacts: written inside it, they were scanned as
+      # part of the change (a false Threat Index alarm on CodeDelta's own reports, 17 Oct 2026).
       /opt/codedelta/codedelta-gui scan $TARGETS --mode "$CD_MODE" --threshold "$CD_THRESHOLD" \
-        --out-dir cd-out --html --json --csv --pr-comment || CD_RC=$?
+        --out-dir /tmp/cd-out --html --json --csv --pr-comment || CD_RC=$?
+      mkdir -p cd-out && cp -R /tmp/cd-out/. cd-out/
       # exit 3 = findings gate (only meaningful with --fail-on-new); anything else non-zero is a real error
       if [ "${CD_RC:-0}" != "0" ] && [ "${CD_RC:-0}" != "3" ]; then exit "${CD_RC}"; fi
     - |
