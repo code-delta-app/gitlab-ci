@@ -17,7 +17,7 @@ Variables (all optional):
 - `CODEDELTA_ENGINE_URL` — pin an engine version or point at a self-hosted copy.
 - `CD_MODE` (`churn_agent` default), `CD_THRESHOLD` (50).
 
-Validated 7 October 2026 on GitLab.com with a pre-release build of v2.3.0: the job ran in a real merge-request pipeline and produced the reports, with CodeDelta's own output kept out of the scan. The MR-note API step is untested against a real GitLab instance (it needs a Project Access Token).
+Tested 17 October 2026 on GitLab.com with the released engine: the job ran in a real merge-request pipeline, produced the reports with CodeDelta's own output kept out of the scan, posted its merge-request note, and on the next pipeline updated that note in place.
 
 ---
 
